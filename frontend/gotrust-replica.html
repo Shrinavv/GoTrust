@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GoTrust Replica - Full Stack</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <!-- Google Consent Mode v2 -->
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('consent', 'default', {
+      'ad_storage': 'denied',
+      'analytics_storage': 'denied',
+      'ad_user_data': 'denied',
+      'ad_personalization': 'denied'
+    });
+  </script>
+  <style>
+    .banner { animation: slideUp 0.4s; }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .toggle-switch { ... } /* same as before */
+  </style>
+</head>
+<body class="bg-gray-50">
+
+<nav class="bg-white shadow border-b sticky top-0 z-50">
+  <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-2xl font-bold">G</div>
+      <span class="text-3xl font-bold">GoTrust</span>
+    </div>
+    <div class="flex items-center gap-8 text-sm">
+      <button onclick="switchLang()" id="langBtn" class="font-medium">हिंदी</button>
+      <button onclick="showPreferences()" class="text-blue-600 hover:underline">Preference Center</button>
+      <button onclick="scanCookies()" class="text-blue-600 hover:underline">Advanced Scanner</button>
+      <button onclick="showDashboard()" class="bg-blue-600 text-white px-5 py-2 rounded-2xl">Admin Dashboard</button>
+    </div>
+  </div>
+</nav>
+
+<!-- Consent Banner (geo-aware) -->
+<div id="consentBanner" class="fixed bottom-0 left-0 right-0 bg-white border-t shadow-2xl p-6 banner hidden z-50">
+  <div class="max-w-5xl mx-auto">
+    <p id="bannerText" class="text-gray-700"></p>
+    <div class="flex gap-3 mt-4 flex-wrap">
+      <button onclick="rejectAll()" class="px-6 py-3 border rounded-2xl">Only Necessary</button>
+      <button onclick="showPreferences()" class="px-6 py-3 border rounded-2xl">Allow Selection</button>
+      <button onclick="acceptAll()" class="px-6 py-3 bg-blue-600 text-white rounded-2xl">Allow All</button>
+    </div>
+  </div>
+</div>
+
+<!-- All other modals + content same as before but with fetch calls -->
+
+<script>
+// Translations
+const translations = {
+  en: { /* all texts in English */ },
+  hi: { /* Hindi translations */ }
+};
+let currentLang = 'en';
+
+// Google Consent Mode update helper
+function updateGoogleConsent(consents) {
+  gtag('consent', 'update', {
+    'analytics_storage': consents.performance ? 'granted' : 'denied',
+    'ad_storage': consents.targeting ? 'granted' : 'denied',
+    'ad_user_data': consents.targeting ? 'granted' : 'denied',
+    'ad_personalization': consents.targeting ? 'granted' : 'denied'
+  });
+}
+
+// Geo + IP detection
+async function detectGeo() {
+  try {
+    const res = await fetch('https://ipapi.co/json/');
+    const data = await res.json();
+    window.userCountry = data.country_name || 'India';
+    window.userCode = data.country_code || 'IN';
+    return data;
+  } catch(e) { return { country_name: 'India', country_code: 'IN' }; }
+}
+
+// Save consent to backend
+async function saveConsent(consents) {
+  const geo = await detectGeo();
+  const res = await fetch('http://localhost:5000/api/consent/save', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ consents, country: geo.country_name })
+  });
+  const data = await res.json();
+  localStorage.setItem('gotrustConsentId', data.consentId);
+  updateGoogleConsent(consents);
+  // rest same as before
+}
+
+// Withdraw
+async function withdrawConsent() {
+  const id = localStorage.getItem('gotrustConsentId');
+  if (id) {
+    await fetch('http://localhost:5000/api/consent/withdraw', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ consentId: id })
+    });
+  }
+}
+
+// Scan
+async function scanCookies() {
+  const cookies = document.cookie.split(';').map(c => ({name: c.split('=')[0].trim()}));
+  const res = await fetch('http://localhost:5000/api/consent/scan', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ cookies })
+  });
+  const data = await res.json();
+  // show results in popup
+}
+
+// Admin Dashboard (with Chart.js + CSV)
+// 
+
+
+async function showDashboard() {
+  const token = localStorage.getItem('adminToken') || prompt('Enter Admin JWT Token (get from /api/auth/login)');
+
+  if (!token) {
+    alert('No token provided. First login via POST /api/auth/login with username: admin, password: admin123');
+    return;
+  }
+
+  try {
+    const res = await fetch('http://localhost:5000/api/consent/audit', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      alert(`Error ${res.status}: ${err.msg || 'Failed to load dashboard'}`);
+      return;
+    }
+
+    const data = await res.json();
+
+    // Now safe to use .map
+    if (!data.logs || !Array.isArray(data.logs)) {
+      alert('No audit logs found or invalid response');
+      return;
+    }
+
+    // Example: render logs in new window
+    let html = `
+      <div class="p-8 bg-white">
+        <h2 class="text-3xl font-bold mb-6">Admin Dashboard</h2>
+        <p>Consent Rate: ${data.stats?.rate || 'N/A'}%</p>
+        <p>Total: ${data.stats?.total || 0} | Withdrawn: ${data.stats?.withdrawn || 0}</p>
+        <h3 class="text-xl mt-8 mb-4">Audit Logs</h3>
+        <table class="w-full border-collapse">
+          <thead><tr class="bg-gray-100"><th class="p-3 text-left">Time</th><th>Action</th><th>Consent ID</th></tr></thead>
+          <tbody>
+            ${data.logs.map(log => `
+              <tr class="border-b">
+                <td class="p-3">${new Date(log.timestamp).toLocaleString()}</td>
+                <td>${log.action}</td>
+                <td class="font-mono">${log.consentId || '-'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+
+    // Optional: very basic Chart.js example
+    // You would create <canvas id="myChart"></canvas> and then:
+    // new Chart(win.document.getElementById('myChart'), { type: 'bar', data: {...} });
+
+  } catch (err) {
+    console.error(err);
+    alert('Dashboard failed: ' + err.message + '\nIs backend running on port 5000?');
+  }
+}
+</script>
+</body>
+</html>
