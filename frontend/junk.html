@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GoTrust Replica - Consent Management Platform</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <style>
+    .banner { animation: slideUp 0.4s ease-out; }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .toggle-switch { position: relative; display: inline-block; width: 52px; height: 28px; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 9999px; }
+    .slider:before { position: absolute; content: ""; height: 22px; width: 22px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+    input:checked + .slider { background-color: #3b82f6; }
+    input:checked + .slider:before { transform: translateX(24px); }
+  </style>
+</head>
+<body class="bg-gray-50 font-sans">
+
+  <!-- Navigation -->
+  <nav class="bg-white shadow border-b sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-2xl font-bold">G</div>
+        <span class="text-3xl font-bold tracking-tight">GoTrust</span>
+      </div>
+      <div class="flex items-center gap-8 text-sm font-medium">
+        <button onclick="showPreferences()" class="text-blue-600 hover:underline">Preference Center</button>
+        <button onclick="scanCookies()" class="text-blue-600 hover:underline">Cookie Scanner</button>
+        <button onclick="showDashboard()" class="text-blue-600 hover:underline">Admin Dashboard</button>
+        <button onclick="resetConsent()" class="text-red-600 hover:underline">Reset Consent</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Consent Banner -->
+  <div id="consentBanner" class="fixed bottom-0 left-0 right-0 bg-white border-t shadow-2xl p-6 banner hidden z-50">
+    <div class="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+      <p class="text-gray-700">We use cookies to improve your experience and analyze usage. You can manage preferences anytime.</p>
+      <div class="flex gap-3">
+        <button onclick="rejectAll()" class="px-6 py-3 border border-gray-300 rounded-2xl hover:bg-gray-100">Only Necessary</button>
+        <button onclick="showPreferences()" class="px-6 py-3 border border-gray-300 rounded-2xl hover:bg-gray-100">Allow Selection</button>
+        <button onclick="acceptAll()" class="px-6 py-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700">Allow All</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Preference Center Modal -->
+  <div id="preferenceModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[100]">
+    <div class="bg-white rounded-3xl max-w-lg w-full mx-4 overflow-hidden">
+      <div class="px-8 py-6 border-b flex justify-between">
+        <h2 class="text-2xl font-semibold">Cookie Preferences</h2>
+        <button onclick="hidePreferences()" class="text-3xl text-gray-400 hover:text-gray-600">×</button>
+      </div>
+      <div class="p-8 space-y-8" id="categoriesContainer"></div>
+      <div class="p-6 border-t flex gap-3 bg-gray-50">
+        <button onclick="savePreferences()" class="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-medium">Save Preferences</button>
+        <button onclick="hidePreferences()" class="flex-1 border border-gray-300 py-4 rounded-2xl font-medium">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Demo Area -->
+  <div class="max-w-5xl mx-auto px-6 py-12">
+    <h1 class="text-5xl font-bold text-center mb-4">GoTrust Replica</h1>
+    <p class="text-center text-xl text-gray-600 mb-12">A fully working Consent Management Platform (connected to your MongoDB)</p>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div class="bg-white p-8 rounded-3xl shadow text-center">
+        <h3 class="font-semibold mb-2">Analytics Status</h3>
+        <div id="analyticsStatus" class="text-2xl font-medium text-green-600">⏳ Checking...</div>
+      </div>
+      <div class="bg-white p-8 rounded-3xl shadow text-center">
+        <h3 class="font-semibold mb-2">Marketing Status</h3>
+        <div id="marketingStatus" class="text-2xl font-medium text-red-600">⏳ Checking...</div>
+      </div>
+      <div class="bg-white p-8 rounded-3xl shadow text-center">
+        <h3 class="font-semibold mb-2">Your Consent ID</h3>
+        <div id="consentIdDisplay" class="font-mono text-sm break-all text-gray-500">None yet</div>
+      </div>
+    </div>
+
+    <button onclick="resetConsent()" class="mt-12 mx-auto block px-10 py-4 bg-red-100 text-red-700 rounded-2xl hover:bg-red-200 text-sm font-medium">
+      Reset All Consents (for testing)
+    </button>
+  </div>
+
+  <script>
+    // ==================== CONFIG ====================
+    const categories = [
+      { id: "essential", name: "Strictly Necessary", desc: "Required for the site to work", enabled: true, locked: true },
+      { id: "performance", name: "Performance & Analytics", desc: "Helps us understand usage", enabled: false },
+      { id: "functional", name: "Functional", desc: "Chat, video, preferences", enabled: false },
+      { id: "targeting", name: "Targeting & Advertising", desc: "Personalized ads", enabled: false }
+    ];
+
+    let currentConsents = { essential: true, performance: false, functional: false, targeting: false };
+
+    // ==================== CORE FUNCTIONS ====================
+    function loadConsent() {
+      const saved = localStorage.getItem("gotrustConsent");
+      if (saved) {
+        const data = JSON.parse(saved);
+        currentConsents = data.consents || currentConsents;
+        document.getElementById("consentIdDisplay").textContent = data.id || "Saved";
+        document.getElementById("consentBanner").classList.add("hidden");
+      } else {
+        document.getElementById("consentBanner").classList.remove("hidden");
+      }
+      updateStatus();
+    }
+
+    function updateStatus() {
+      document.getElementById("analyticsStatus").innerHTML = currentConsents.performance ? "✅ Active" : "⛔ Blocked";
+      document.getElementById("marketingStatus").innerHTML = currentConsents.targeting ? "✅ Active" : "⛔ Blocked";
+    }
+
+    async function saveConsent(consents) {
+      try {
+        const res = await fetch("http://localhost:5000/api/consent/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ consents, country: "India" })
+        });
+        const data = await res.json();
+        console.log("✅ Saved to MongoDB → Consent ID:", data.consentId);
+      } catch (e) {
+        console.warn("Backend save failed (using local only)", e);
+      }
+    }
+
+    function saveToLocal(consents) {
+      const data = {
+        id: "GT-" + Date.now().toString(36).toUpperCase(),
+        consents,
+        timestamp: new Date().toISOString()
+      };
+      localStorage.setItem("gotrustConsent", JSON.stringify(data));
+      currentConsents = consents;
+      document.getElementById("consentIdDisplay").textContent = data.id;
+      updateStatus();
+    }
+
+    // Button actions
+    async function acceptAll() { 
+      const c = { essential: true, performance: true, functional: true, targeting: true };
+      saveToLocal(c);
+      await saveConsent(c);
+      document.getElementById("consentBanner").classList.add("hidden");
+    }
+
+    async function rejectAll() { 
+      const c = { essential: true, performance: false, functional: false, targeting: false };
+      saveToLocal(c);
+      await saveConsent(c);
+      document.getElementById("consentBanner").classList.add("hidden");
+    }
+
+    function renderCategories() {
+      const container = document.getElementById("categoriesContainer");
+      container.innerHTML = categories.map(cat => `
+        <div class="flex justify-between items-center py-5 border-b last:border-0">
+          <div>
+            <div class="font-medium">${cat.name}</div>
+            <div class="text-sm text-gray-500">${cat.desc}</div>
+          </div>
+          ${cat.locked ? 
+            `<span class="text-xs bg-gray-100 px-4 py-1 rounded-full">Always On</span>` : 
+            `<label class="toggle-switch">
+              <input type="checkbox" ${currentConsents[cat.id] ? 'checked' : ''} onchange="toggleCategory('${cat.id}', this.checked)">
+              <span class="slider"></span>
+            </label>`
+          }
+        </div>
+      `).join('');
+    }
+
+    function toggleCategory(id, checked) {
+      currentConsents[id] = checked;
+    }
+
+    function showPreferences() {
+      renderCategories();
+      document.getElementById("preferenceModal").classList.remove("hidden");
+    }
+
+    function hidePreferences() {
+      document.getElementById("preferenceModal").classList.add("hidden");
+    }
+
+    async function savePreferences() {
+      saveToLocal(currentConsents);
+      await saveConsent(currentConsents);
+      hidePreferences();
+    }
+
+    async function scanCookies() {
+      // Read cookies from current page
+      const cookieString = document.cookie;
+      if (!cookieString) {
+        alert("No cookies found on this domain.");
+        return;
+      }
+    
+      // Parse into array of objects {name, value}
+      const cookiesList = cookieString
+        .split('; ')
+        .filter(c => c.trim())
+        .map(c => {
+          const [name, ...valueParts] = c.split('=');
+          const value = valueParts.join('=');
+          return { name: name.trim(), value: decodeURIComponent(value) };
+        });
+      
+      try {
+        // Send only names to backend (privacy friendly)
+        const res = await fetch("http://localhost:5000/api/consent/scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cookies: cookiesList.map(c => ({ name: c.name })) })
+        });
+      
+        if (!res.ok) {
+          throw new Error(`Backend returned ${res.status}`);
+        }
+      
+        const data = await res.json();
+      
+        // Build HTML string for popup (this is the template literal part)
+        let html = `
+    <div class="p-6 bg-white rounded-2xl max-w-2xl mx-auto">
+      <h2 class="text-2xl font-bold mb-4">
+        Cookie Scan Results (${data.total} cookies found)
+      </h2>
+      <p class="text-sm text-gray-500 mb-6">
+        Detected on current domain. Categories are mock-classified.
+      </p>
+      
+      <div class="overflow-auto max-h-96 border rounded-lg">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-100 sticky top-0">
+            <tr>
+              <th class="p-3 text-left">Name</th>
+              <th class="p-3 text-left">Category</th>
+              <th class="p-3 text-left">Purpose</th>
+              <th class="p-3 text-left">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.scanned.map(item => `
+              <tr class="border-b hover:bg-gray-50">
+                <td class="p-3 font-mono">${item.name}</td>
+                <td class="p-3">${item.category}</td>
+                <td class="p-3 text-gray-700">${item.purpose}</td>
+                <td class="p-3">${item.status}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+      
+      <p class="text-xs text-gray-500 mt-4 text-center">
+        Note: Only first-party cookies are visible client-side.
+      </p>
+    </div>
+    `;
+    
+        // Open popup window with the results
+        const win = window.open("", "_blank", "width=900,height=700");
+        win.document.write(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Cookie Scan - GoTrust Replica</title>
+            <script src="https://cdn.tailwindcss.com"></script>
+          </head>
+          <body class="bg-gray-50 p-6">
+            ${html}
+          </body>
+          </html>
+        `);
+        win.document.close();
+        
+      } catch (err) {
+        console.error("Scanner error:", err);
+        alert("Cookie scanner failed: " + err.message + "\nCheck if backend is running.");
+      }
+    }
+
+    async function showDashboard() {
+      const token = prompt("Enter Admin JWT Token\n(Get it from /api/auth/login with admin/admin123)");
+      if (!token) return;
+      alert("Admin Dashboard opened (mock for now)\n\nReal version shows MongoDB data + charts");
+    }
+
+    function resetConsent() {
+      localStorage.removeItem("gotrustConsent");
+      location.reload();
+    }
+
+    // ==================== START ====================
+    window.onload = () => {
+      loadConsent();
+      console.log("%c✅ GoTrust Replica is now fully working! Banner should appear below.", "color: #3b82f6; font-size: 15px");
+    };
+  </script>
+</body>
+</html>

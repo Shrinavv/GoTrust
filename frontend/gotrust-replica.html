@@ -3,193 +3,455 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GoTrust Replica - Full Stack</title>
+  <title>GoTrust Replica - Consent Management Platform</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-  <!-- Google Consent Mode v2 -->
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('consent', 'default', {
-      'ad_storage': 'denied',
-      'analytics_storage': 'denied',
-      'ad_user_data': 'denied',
-      'ad_personalization': 'denied'
-    });
-  </script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <style>
-    .banner { animation: slideUp 0.4s; }
+    .banner { animation: slideUp 0.4s ease-out; }
     @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-    .toggle-switch { ... } /* same as before */
+    .toggle-switch { position: relative; display: inline-block; width: 52px; height: 28px; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 9999px; }
+    .slider:before { position: absolute; content: ""; height: 22px; width: 22px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+    input:checked + .slider { background-color: #3b82f6; }
+    input:checked + .slider:before { transform: translateX(24px); }
   </style>
 </head>
-<body class="bg-gray-50">
+<body class="bg-gray-50 font-sans">
 
-<nav class="bg-white shadow border-b sticky top-0 z-50">
-  <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between">
-    <div class="flex items-center gap-3">
-      <div class="w-9 h-9 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-2xl font-bold">G</div>
-      <span class="text-3xl font-bold">GoTrust</span>
+  <nav class="bg-white shadow border-b sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-2xl font-bold">G</div>
+        <span class="text-3xl font-bold tracking-tight">GoTrust</span>
+      </div>
+      <div class="flex items-center gap-8 text-sm font-medium">
+        <button onclick="showPreferences()" class="text-blue-600 hover:underline">Preference Center</button>
+        <button onclick="scanCookies()" class="text-blue-600 hover:underline">Cookie Scanner</button>
+        <button onclick="showDashboard()" class="text-blue-600 hover:underline">Admin Dashboard</button>
+        <button onclick="resetConsent()" class="text-red-600 hover:underline">Reset Consent</button>
+      </div>
     </div>
-    <div class="flex items-center gap-8 text-sm">
-      <button onclick="switchLang()" id="langBtn" class="font-medium">हिंदी</button>
-      <button onclick="showPreferences()" class="text-blue-600 hover:underline">Preference Center</button>
-      <button onclick="scanCookies()" class="text-blue-600 hover:underline">Advanced Scanner</button>
-      <button onclick="showDashboard()" class="bg-blue-600 text-white px-5 py-2 rounded-2xl">Admin Dashboard</button>
+  </nav>
+
+  <div id="consentBanner" class="fixed bottom-0 left-0 right-0 bg-white border-t shadow-2xl p-6 banner hidden z-50">
+    <div class="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+      <p class="text-gray-700">We use cookies to improve your experience and analyze usage. You can manage preferences anytime.</p>
+      <div class="flex gap-3">
+        <button onclick="rejectAll()" class="px-6 py-3 border border-gray-300 rounded-2xl hover:bg-gray-100">Only Necessary</button>
+        <button onclick="showPreferences()" class="px-6 py-3 border border-gray-300 rounded-2xl hover:bg-gray-100">Allow Selection</button>
+        <button onclick="acceptAll()" class="px-6 py-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700">Allow All</button>
+      </div>
     </div>
   </div>
-</nav>
 
-<!-- Consent Banner (geo-aware) -->
-<div id="consentBanner" class="fixed bottom-0 left-0 right-0 bg-white border-t shadow-2xl p-6 banner hidden z-50">
-  <div class="max-w-5xl mx-auto">
-    <p id="bannerText" class="text-gray-700"></p>
-    <div class="flex gap-3 mt-4 flex-wrap">
-      <button onclick="rejectAll()" class="px-6 py-3 border rounded-2xl">Only Necessary</button>
-      <button onclick="showPreferences()" class="px-6 py-3 border rounded-2xl">Allow Selection</button>
-      <button onclick="acceptAll()" class="px-6 py-3 bg-blue-600 text-white rounded-2xl">Allow All</button>
+  <div id="preferenceModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[100]">
+    <div class="bg-white rounded-3xl max-w-lg w-full mx-4 overflow-hidden">
+      <div class="px-8 py-6 border-b flex justify-between">
+        <h2 class="text-2xl font-semibold">Cookie Preferences</h2>
+        <button onclick="hidePreferences()" class="text-3xl text-gray-400 hover:text-gray-600">x</button>
+      </div>
+      <div class="p-8 space-y-8" id="categoriesContainer"></div>
+      <div class="p-6 border-t flex gap-3 bg-gray-50">
+        <button onclick="savePreferences()" class="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-medium">Save Preferences</button>
+        <button onclick="hidePreferences()" class="flex-1 border border-gray-300 py-4 rounded-2xl font-medium">Cancel</button>
+      </div>
     </div>
   </div>
-</div>
 
-<!-- All other modals + content same as before but with fetch calls -->
+  <div class="max-w-5xl mx-auto px-6 py-12">
+    <h1 class="text-5xl font-bold text-center mb-4">GoTrust Replica</h1>
+    <p class="text-center text-xl text-gray-600 mb-12">A fully working Consent Management Platform (connected to your MongoDB)</p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div class="bg-white p-8 rounded-3xl shadow text-center">
+        <h3 class="font-semibold mb-2">Analytics Status</h3>
+        <div id="analyticsStatus" class="text-2xl font-medium text-green-600">Checking...</div>
+      </div>
+      <div class="bg-white p-8 rounded-3xl shadow text-center">
+        <h3 class="font-semibold mb-2">Marketing Status</h3>
+        <div id="marketingStatus" class="text-2xl font-medium text-red-600">Checking...</div>
+      </div>
+      <div class="bg-white p-8 rounded-3xl shadow text-center">
+        <h3 class="font-semibold mb-2">Your Consent ID</h3>
+        <div id="consentIdDisplay" class="font-mono text-sm break-all text-gray-500">None yet</div>
+      </div>
+    </div>
+    <button onclick="resetConsent()" class="mt-12 mx-auto block px-10 py-4 bg-red-100 text-red-700 rounded-2xl hover:bg-red-200 text-sm font-medium">
+      Reset All Consents (for testing)
+    </button>
+  </div>
 
-<script>
-// Translations
-const translations = {
-  en: { /* all texts in English */ },
-  hi: { /* Hindi translations */ }
-};
-let currentLang = 'en';
+  <script>
+    // ==================== CONFIG ====================
+    const categories = [
+      { id: "essential", name: "Strictly Necessary", desc: "Required for the site to work", enabled: true, locked: true },
+      { id: "performance", name: "Performance & Analytics", desc: "Helps us understand usage", enabled: false },
+      { id: "functional", name: "Functional", desc: "Chat, video, preferences", enabled: false },
+      { id: "targeting", name: "Targeting & Advertising", desc: "Personalized ads", enabled: false }
+    ];
 
-// Google Consent Mode update helper
-function updateGoogleConsent(consents) {
-  gtag('consent', 'update', {
-    'analytics_storage': consents.performance ? 'granted' : 'denied',
-    'ad_storage': consents.targeting ? 'granted' : 'denied',
-    'ad_user_data': consents.targeting ? 'granted' : 'denied',
-    'ad_personalization': consents.targeting ? 'granted' : 'denied'
-  });
-}
+    let currentConsents = { essential: true, performance: false, functional: false, targeting: false };
 
-// Geo + IP detection
-async function detectGeo() {
-  try {
-    const res = await fetch('https://ipapi.co/json/');
-    const data = await res.json();
-    window.userCountry = data.country_name || 'India';
-    window.userCode = data.country_code || 'IN';
-    return data;
-  } catch(e) { return { country_name: 'India', country_code: 'IN' }; }
-}
+    // ==================== REALISTIC DEMO COOKIES ====================
+    function createRealisticDemoCookies() {
+      const cookies = [
+        "theme=dark; path=/; max-age=86400",
+        "_ga_demo=GA1.2.987654321.1698765432; path=/; max-age=86400",
+        "_fbp=fb.1.1698765432.123456; path=/; max-age=86400",
+        "session=xyz789abc123; path=/; max-age=86400",
+        "lang=en; path=/; max-age=86400"
+      ];
+    
+      cookies.forEach(str => {
+        if (!document.cookie.includes(str.split('=')[0] + '=')) {
+          document.cookie = str;
+        }
+      });
+    }
+    createRealisticDemoCookies();
+    // ==================== CORE FUNCTIONS ====================
+    function loadConsent() {
+      const saved = localStorage.getItem("gotrustConsent");
+      if (saved) {
+        const data = JSON.parse(saved);
+        currentConsents = data.consents || currentConsents;
+        document.getElementById("consentIdDisplay").textContent = data.id || "Saved";
+        document.getElementById("consentBanner").classList.add("hidden");
+      } else {
+        document.getElementById("consentBanner").classList.remove("hidden");
+      }
+      updateStatus();
+    }
 
-// Save consent to backend
-async function saveConsent(consents) {
-  const geo = await detectGeo();
-  const res = await fetch('http://localhost:5000/api/consent/save', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ consents, country: geo.country_name })
-  });
-  const data = await res.json();
-  localStorage.setItem('gotrustConsentId', data.consentId);
-  updateGoogleConsent(consents);
-  // rest same as before
-}
+    function updateStatus() {
+      document.getElementById("analyticsStatus").innerHTML = currentConsents.performance ? "Active" : "Blocked";
+      document.getElementById("marketingStatus").innerHTML = currentConsents.targeting ? "Active" : "Blocked";
+    }
 
-// Withdraw
-async function withdrawConsent() {
-  const id = localStorage.getItem('gotrustConsentId');
-  if (id) {
-    await fetch('http://localhost:5000/api/consent/withdraw', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ consentId: id })
+    async function saveConsent(consents) {
+      try {
+        const res = await fetch("http://localhost:5000/api/consent/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ consents, country: "India" })
+        });
+        const data = await res.json();
+        console.log("Saved to MongoDB -> Consent ID:", data.consentId);
+      } catch (e) {
+        console.warn("Backend save failed (using local only)", e);
+      }
+    }
+
+    function saveToLocal(consents) {
+      const data = {
+        id: "GT-" + Date.now().toString(36).toUpperCase(),
+        consents,
+        timestamp: new Date().toISOString()
+      };
+      localStorage.setItem("gotrustConsent", JSON.stringify(data));
+      currentConsents = consents;
+      document.getElementById("consentIdDisplay").textContent = data.id;
+      updateStatus();
+    }
+
+    async function acceptAll() {
+      const c = { essential: true, performance: true, functional: true, targeting: true };
+      saveToLocal(c);
+      await saveConsent(c);
+      document.getElementById("consentBanner").classList.add("hidden");
+    }
+
+    async function rejectAll() {
+      const c = { essential: true, performance: false, functional: false, targeting: false };
+      saveToLocal(c);
+      await saveConsent(c);
+      document.getElementById("consentBanner").classList.add("hidden");
+    }
+
+    function simulateCookiesBasedOnConsent() {
+      // Remove non-essential demo cookies first
+      const nonEssential = ["_ga_demo", "lang"]; // example names
+      nonEssential.forEach(name => {
+        document.cookie = name + "=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+      });
+    
+      // Create only consented ones
+      if (currentConsents.performance) {
+        document.cookie = "_ga_demo=GA1.2.demo123.1698765432; path=/; max-age=86400";
+      }
+      if (currentConsents.functional) {
+        document.cookie = "lang=en; path=/; max-age=86400";
+      }
+    
+      console.log("Simulated cookies updated based on consent");
+    }
+
+    function renderCategories() {
+      const container = document.getElementById("categoriesContainer");
+      container.innerHTML = categories.map(cat => `
+        <div class="flex justify-between items-center py-5 border-b last:border-0">
+          <div>
+            <div class="font-medium">${cat.name}</div>
+            <div class="text-sm text-gray-500">${cat.desc}</div>
+          </div>
+          ${cat.locked ?
+            `<span class="text-xs bg-gray-100 px-4 py-1 rounded-full">Always On</span>` :
+            `<label class="toggle-switch">
+              <input type="checkbox" ${currentConsents[cat.id] ? 'checked' : ''} onchange="toggleCategory('${cat.id}', this.checked)">
+              <span class="slider"></span>
+            </label>`
+          }
+        </div>
+      `).join('');
+    }
+
+    function toggleCategory(id, checked) {
+      currentConsents[id] = checked;
+    }
+
+    function showPreferences() {
+      renderCategories();
+      document.getElementById("preferenceModal").classList.remove("hidden");
+    }
+
+    function hidePreferences() {
+      document.getElementById("preferenceModal").classList.add("hidden");
+    }
+
+    async function savePreferences() {
+      saveToLocal(currentConsents);
+      await saveConsent(currentConsents);
+      simulateCookiesBasedOnConsent();
+      hidePreferences();
+    }
+
+    async function scanCookies() {
+  const cookieString = document.cookie;
+  if (!cookieString) {
+    alert("No cookies found on this domain.");
+    return;
+  }
+
+  const cookiesList = cookieString
+    .split('; ')
+    .filter(c => c.trim())
+    .map(c => {
+      const [name, ...valueParts] = c.split('=');
+      const value = valueParts.join('=');
+      return { name: name.trim(), value: decodeURIComponent(value) };
     });
+
+  try {
+    const res = await fetch("http://localhost:5000/api/consent/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        cookies: cookiesList.map(c => ({ name: c.name })), 
+        consents: currentConsents 
+      })
+    });
+
+    if (!res.ok) throw new Error("Backend scan failed");
+
+    const data = await res.json();
+
+    // Build nice table
+    let html = '<div class="p-6 bg-white rounded-2xl max-w-3xl mx-auto">';
+    html += '<h2 class="text-2xl font-bold mb-4">Cookie Scan Results (' + data.total + ' cookies found)</h2>';
+    html += '<p class="text-sm text-gray-500 mb-6">Live scan based on your current consent preferences</p>';
+
+    html += '<div class="overflow-auto max-h-96 border rounded-lg">';
+    html += '<table class="w-full text-sm">';
+    html += '<thead class="bg-gray-100 sticky top-0"><tr>';
+    html += '<th class="p-3 text-left">Name</th>';
+    html += '<th class="p-3 text-left">Category</th>';
+    html += '<th class="p-3 text-left">Purpose</th>';
+    html += '<th class="p-3 text-left">Status</th>';
+    html += '<th class="p-3 text-left">Blocked?</th>';
+    html += '</tr></thead>';
+    html += '<tbody>';
+
+    data.scanned.forEach(item => {
+      const blockedClass = item.blocked === 'Blocked' ? 'text-red-600 font-medium' : 'text-green-600';
+      html += '<tr class="border-b hover:bg-gray-50">';
+      html += '<td class="p-3 font-mono">' + item.name + '</td>';
+      html += '<td class="p-3">' + item.category + '</td>';
+      html += '<td class="p-3 text-gray-700">' + item.purpose + '</td>';
+      html += '<td class="p-3">' + item.status + '</td>';
+      html += '<td class="p-3 ' + blockedClass + '">' + item.blocked + '</td>';
+      html += '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    html += '<p class="text-xs text-gray-500 mt-4 text-center">Only first-party cookies are visible. Changing preferences updates this instantly.</p>';
+    html += '</div>';
+
+    const win = window.open("", "_blank", "width=1000,height=750");
+    win.document.write(
+      '<!DOCTYPE html><html><head><title>Cookie Scan</title>' +
+        '<script src="https://cdn.tailwindcss.com"><\/script>'+
+      '<body class="bg-gray-50 p-6">' + html + '</body></html>'
+    );
+    win.document.close();
+
+  } catch (err) {
+    console.error(err);
+    alert("Scanner failed: " + err.message);
   }
 }
-
-// Scan
-async function scanCookies() {
-  const cookies = document.cookie.split(';').map(c => ({name: c.split('=')[0].trim()}));
-  const res = await fetch('http://localhost:5000/api/consent/scan', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ cookies })
-  });
-  const data = await res.json();
-  // show results in popup
-}
-
-// Admin Dashboard (with Chart.js + CSV)
-// 
-
-
 async function showDashboard() {
-  const token = localStorage.getItem('adminToken') || prompt('Enter Admin JWT Token (get from /api/auth/login)');
+  // Open the window FIRST (synchronous, direct from click event)
+  const win = window.open("", "_blank", "width=1200,height=800");
+  if (!win) {
+    alert("Popup blocked! Please allow popups for this site in your browser settings.");
+    return;
+  }
 
+  // Show loading message immediately
+  win.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>GoTrust Admin Dashboard - Loading...</title>
+      <script src="https://cdn.tailwindcss.com"><\/script>
+    </head>
+    <body class="bg-gray-100 p-8">
+      <div class="max-w-6xl mx-auto text-center">
+        <h1 class="text-3xl font-bold mb-6">Loading Admin Dashboard...</h1>
+        <p class="text-lg">Please wait while we fetch your data.</p>
+      </div>
+    </body>
+    </html>
+  `);
+  win.document.close();
+
+  const token = prompt("Enter Admin JWT Token\n(Get from POST /api/auth/login with admin / admin123)");
   if (!token) {
-    alert('No token provided. First login via POST /api/auth/login with username: admin, password: admin123');
+    win.close();
     return;
   }
 
   try {
-    const res = await fetch('http://localhost:5000/api/consent/audit', {
+    const res = await fetch("http://localhost:5000/api/consent/all", {
+      method: "GET",
       headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
       }
     });
 
     if (!res.ok) {
-      const err = await res.json();
-      alert(`Error ${res.status}: ${err.msg || 'Failed to load dashboard'}`);
+      const err = await res.text(); // use .text() instead of .json() to avoid parse crash
+      win.document.body.innerHTML = `
+        <div class="p-8 bg-white">
+          <h1 class="text-3xl font-bold text-red-600">Error Loading Dashboard</h1>
+          <p class="mt-4">Status: ${res.status}</p>
+          <pre class="mt-4 bg-gray-100 p-4 rounded overflow-auto">${err}</pre>
+        </div>
+      `;
       return;
     }
 
     const data = await res.json();
 
-    // Now safe to use .map
-    if (!data.logs || !Array.isArray(data.logs)) {
-      alert('No audit logs found or invalid response');
-      return;
-    }
+    // Build real dashboard content
+    let dashboardHTML = `
+<div class="p-8 bg-white min-h-screen">
+  <div class="max-w-6xl mx-auto">
+    <h1 class="text-3xl font-bold mb-6 text-center">GoTrust Admin Dashboard</h1>
 
-    // Example: render logs in new window
-    let html = `
-      <div class="p-8 bg-white">
-        <h2 class="text-3xl font-bold mb-6">Admin Dashboard</h2>
-        <p>Consent Rate: ${data.stats?.rate || 'N/A'}%</p>
-        <p>Total: ${data.stats?.total || 0} | Withdrawn: ${data.stats?.withdrawn || 0}</p>
-        <h3 class="text-xl mt-8 mb-4">Audit Logs</h3>
-        <table class="w-full border-collapse">
-          <thead><tr class="bg-gray-100"><th class="p-3 text-left">Time</th><th>Action</th><th>Consent ID</th></tr></thead>
-          <tbody>
-            ${data.logs.map(log => `
-              <tr class="border-b">
-                <td class="p-3">${new Date(log.timestamp).toLocaleString()}</td>
-                <td>${log.action}</td>
-                <td class="font-mono">${log.consentId || '-'}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+      <div class="bg-blue-50 p-6 rounded-xl shadow">
+        <div class="text-sm text-blue-700 mb-1">Total Consents</div>
+        <div class="text-4xl font-bold">${data.stats.total}</div>
       </div>
-    `;
+      <div class="bg-green-50 p-6 rounded-xl shadow">
+        <div class="text-sm text-green-700 mb-1">Analytics Accepted</div>
+        <div class="text-4xl font-bold">${data.stats.analyticsAccepted}</div>
+      </div>
+      <div class="bg-purple-50 p-6 rounded-xl shadow">
+        <div class="text-sm text-purple-700 mb-1">Analytics Consent Rate</div>
+        <div class="text-4xl font-bold">${data.stats.analyticsRate}</div>
+      </div>
+    </div>
 
-    const win = window.open('', '_blank');
-    win.document.write(html);
+    <div class="overflow-x-auto border rounded-lg shadow">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-100">
+          <tr>
+            <th class="p-4 text-left">Consent ID</th>
+            <th class="p-4 text-left">Date</th>
+            <th class="p-4 text-left">Country</th>
+            <th class="p-4 text-left">IP</th>
+            <th class="p-4 text-left">Essential</th>
+            <th class="p-4 text-left">Performance</th>
+            <th class="p-4 text-left">Functional</th>
+            <th class="p-4 text-left">Targeting</th>
+            <th class="p-4 text-left">Withdrawn</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.consents.map(c => `
+            <tr class="border-t hover:bg-gray-50">
+              <td class="p-4 font-mono text-xs">${c.consentId}</td>
+              <td class="p-4">${new Date(c.timestamp).toLocaleString()}</td>
+              <td class="p-4">${c.country}</td>
+              <td class="p-4">${c.ip}</td>
+              <td class="p-4 text-center">${c.consents.essential ? '✅' : '❌'}</td>
+              <td class="p-4 text-center">${c.consents.performance ? '✅' : '❌'}</td>
+              <td class="p-4 text-center">${c.consents.functional ? '✅' : '❌'}</td>
+              <td class="p-4 text-center">${c.consents.targeting ? '✅' : '❌'}</td>
+              <td class="p-4 text-center">${c.withdrawn ? 'Yes' : 'No'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <p class="text-sm text-gray-500 mt-6 text-center">
+      Showing latest ${data.consents.length} consents • Total: ${data.stats.total}
+    </p>
+  </div>
+</div>
+`;
+
+    win.document.open();
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>GoTrust Admin Dashboard</title>
+        <script src="https://cdn.tailwindcss.com"><\/script>
+      </head>
+      <body class="bg-gray-100">
+        ${dashboardHTML}
+      </body>
+      </html>
+    `);
     win.document.close();
 
-    // Optional: very basic Chart.js example
-    // You would create <canvas id="myChart"></canvas> and then:
-    // new Chart(win.document.getElementById('myChart'), { type: 'bar', data: {...} });
-
   } catch (err) {
-    console.error(err);
-    alert('Dashboard failed: ' + err.message + '\nIs backend running on port 5000?');
+    console.error("Dashboard error:", err);
+    win.document.open();
+    win.document.write(`
+      <div class="p-8 bg-white">
+        <h1 class="text-3xl font-bold text-red-600">Error Loading Dashboard</h1>
+        <p class="mt-4">Error: ${err.message}</p>
+        <p>Check console for details. Is backend running? Valid token?</p>
+      </div>
+    `);
+    win.document.close();
   }
 }
-</script>
+    function resetConsent() {
+      localStorage.removeItem("gotrustConsent");
+      location.reload();
+    }
+
+    window.onload = () => {
+      loadConsent();
+      console.log("GoTrust Replica loaded.");
+    };
+  </script>
 </body>
 </html>

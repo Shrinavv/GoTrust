@@ -56,16 +56,82 @@ router.get('/stats', auth, async (req, res) => {
   res.json({ consents });
 });
 
-// Mock advanced scanner
 router.post('/scan', async (req, res) => {
-  const { cookies } = req.body; // array of {name}
-  const categorized = cookies.map(c => ({
-    name: c.name,
-    category: ['_ga','_gid'].includes(c.name) ? 'performance' : 
-              ['session','auth'].includes(c.name) ? 'essential' : 
-              ['_fbp','_gcl'].includes(c.name) ? 'targeting' : 'functional'
-  }));
-  res.json({ scanned: categorized });
+  try {
+    const { cookies, consents } = req.body; // now expect optional consents object
+
+    const categorized = cookies.map(cookie => {
+      const name = cookie.name.toLowerCase();
+      let category = 'essential';
+      let purpose = 'Unknown purpose';
+      let status = 'Always allowed';
+      let blocked = false;
+
+      if (name.includes('_ga') || name.includes('_gid') || name.includes('_utm')) {
+        category = 'performance';
+        purpose = 'Google Analytics / tracking';
+        status = 'Requires consent';
+        blocked = consents && !consents.performance;
+      } else if (name.includes('_fbp') || name.includes('_gcl') || name.includes('ads')) {
+        category = 'targeting';
+        purpose = 'Advertising / retargeting';
+        status = 'Requires consent';
+        blocked = consents && !consents.targeting;
+      } else if (name.includes('session') || name.includes('auth')) {
+        category = 'essential';
+        purpose = 'Session management / security';
+      } else if (name.includes('lang') || name.includes('theme') || name.includes('pref')) {
+        category = 'functional';
+        purpose = 'User preferences / functionality';
+        status = 'Requires consent';
+        blocked = consents && !consents.functional;
+      }
+
+      return {
+        name: cookie.name,
+        category,
+        purpose,
+        status,
+        blocked: blocked ? 'Blocked' : 'Allowed'
+      };
+    });
+
+    res.json({ scanned: categorized, total: categorized.length });
+  } catch (err) {
+    res.status(500).json({ error: 'Scan failed' });
+  }
 });
 
+// GET /api/consent/all – returns all consents (for dashboard)
+router.get('/all', async (req, res) => {
+  try {
+    const consents = await Consent.find()
+      .sort({ timestamp: -1 }) // newest first
+      .limit(50); // safety limit
+
+    const total = await Consent.countDocuments();
+    const analyticsAccepted = await Consent.countDocuments({ "consents.performance": true });
+
+    const rate = total > 0 ? ((analyticsAccepted / total) * 100).toFixed(1) : 0;
+
+    res.json({
+      consents: consents.map(c => ({
+        consentId: c.consentId,
+        timestamp: c.timestamp,
+        country: c.country || 'Unknown',
+        ip: c.userIp ? c.userIp.substring(0, 7) + '***' : 'hidden', // mask IP
+        consents: c.consents,
+        withdrawn: c.withdrawn
+      })),
+      stats: {
+        total,
+        analyticsAccepted,
+        analyticsRate: rate + '%'
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch consents' });
+  }
+});
 module.exports = router;
